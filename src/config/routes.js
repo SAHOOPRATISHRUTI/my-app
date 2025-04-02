@@ -8,6 +8,7 @@ import UserPage from "../components/UserPage";
 import ProductPage from "../components/ProductPage";
 import CouponPage from "../components/CouponPage";
 import CheckoutPage from "../components/CheckoutPage"
+import SubscriptionManagement from "../components/SubscriptionManagement"
 const ProtectedRoute = ({ children, role }) => {
   const storedRole = localStorage.getItem("role");
 
@@ -70,6 +71,14 @@ const Mainroute = () => {
             element={
               <ProtectedRoute role="user">
                 <CheckoutPage />
+              </ProtectedRoute>
+            }
+          />
+            <Route
+            path="/SubscriptionManagement"
+            element={
+              <ProtectedRoute role="admin">
+                <SubscriptionManagement />
               </ProtectedRoute>
             }
           />

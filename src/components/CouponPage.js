@@ -1,41 +1,30 @@
 import React, { useEffect, useState } from "react";
-import {
-  Container,
-  Typography,
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  TextField,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-} from "@mui/material";
 import axios from "axios";
 import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { 
+  Container, Typography, TextField, Select, MenuItem, Button, Table, 
+  TableContainer, TableHead, TableRow, TableCell, TableBody, Paper, Grid 
+} from "@mui/material";
 
-const API_BASE_URL = "http://localhost:8080/api/coupon";
-const getToken = () => localStorage.getItem("token"); // Retrieve token
 
-const CouponPage = () => {
+
+const CouponComponent = () => {
   const [coupons, setCoupons] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     code: "",
-    discount: "",
-    discountType: "PERCENTAGE",
-    minPurchase: "",
-    expiresAt: "",
-    usageLimit: "",
+    couponType: "Percentage",
+    couponValue: "",
+    startsFrom: "",
+    endsOn: "",
   });
-  const [editingId, setEditingId] = useState(null);
-  const [couponToDelete, setCouponToDelete] = useState(null);
+
+  const API_URL = "http://localhost:8080/api/coupon";
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("token");
+    return { headers: { Authorization: `Bearer ${token}` } };
+  };
 
   useEffect(() => {
     fetchCoupons();
@@ -43,203 +32,120 @@ const CouponPage = () => {
 
   const fetchCoupons = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/list`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      setCoupons(response.data.data);
+      const response = await axios.get(`${API_URL}/list`);
+      setCoupons(response.data.data || []);
     } catch (error) {
-      toast.error("Failed to fetch coupons!");
+      toast.error(error.response?.data?.message || "Failed to load coupons");
     }
-  };
-
-  const handleOpen = (coupon = null) => {
-    if (coupon) {
-      setEditingId(coupon._id);
-      setFormData({
-        code: coupon.code,
-        discount: coupon.discount,
-        discountType: coupon.discountType,
-        minPurchase: coupon.minPurchase,
-        expiresAt: coupon.expiresAt.split("T")[0], // Format date for input
-        usageLimit: coupon.usageLimit,
-      });
-    } else {
-      setEditingId(null);
-      setFormData({
-        code: "",
-        discount: "",
-        discountType: "PERCENTAGE",
-        minPurchase: "",
-        expiresAt: "",
-        usageLimit: "",
-      });
-    }
-    setOpen(true);
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    setFormData({
-      code: "",
-      discount: "",
-      discountType: "PERCENTAGE",
-      minPurchase: "",
-      expiresAt: "",
-      usageLimit: "",
-    });
   };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async () => {
-    if (!formData.code.trim() || !formData.discount || !formData.minPurchase || !formData.expiresAt || !formData.usageLimit) {
-      toast.error("All fields are required!");
-      return;
-    }
-
-    if (Number(formData.discount) <= 0 || Number(formData.minPurchase) <= 0 || Number(formData.usageLimit) <= 0) {
-      toast.error("Discount, Minimum Purchase, and Usage Limit must be positive numbers!");
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (new Date(formData.endsOn) <= new Date(formData.startsFrom)) {
+      toast.error("End date must be after start date!");
       return;
     }
 
     try {
-      if (editingId) {
-        await axios.put(`${API_BASE_URL}/${editingId}`, formData, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        toast.success("Coupon updated successfully!");
-      } else {
-        await axios.post(`${API_BASE_URL}/create`, formData, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        toast.success("Coupon added successfully!");
-      }
+      await axios.post(`${API_URL}/create`, formData, getAuthHeaders());
+      toast.success("Coupon created successfully!");
       fetchCoupons();
-      handleClose();
+      setFormData({ code: "", couponType: "Percentage", couponValue: "", startsFrom: "", endsOn: "" });
     } catch (error) {
-      toast.error("Operation failed!");
+      toast.error(error.response?.data?.message || "Failed to create coupon");
     }
   };
 
-  const openDeleteDialog = (id) => {
-    setCouponToDelete(id);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleCloseDeleteDialog = () => {
-    setDeleteDialogOpen(false);
-    setCouponToDelete(null);
-  };
-
-  // const handleDelete = async () => {
-  //   if (!couponToDelete) {
-  //     toast.error("Invalid Coupon ID!");
-  //     return;
-  //   }
-  
-  //   console.log("Deleting Coupon ID:", couponToDelete); // Debugging log
-  
-  //   try {
-  //     await axios.delete(`${API_BASE_URL}/delete/${couponToDelete}`, {
-  //       headers: { Authorization: `Bearer ${getToken()}` },
-  //     });
-      
-  
-  //     toast.success("Coupon deleted successfully!");
-  //     fetchCoupons();
-  //   } catch (error) {
-  //     toast.error("Failed to delete coupon!");
-  //   }
-  //   setDeleteDialogOpen(false);
-  // };
-  
-  const handleDelete = async () => {
-    if (!couponToDelete) return;
-
-    const token = localStorage.getItem("token");
-    try {
-      await axios.delete(`http://localhost:8080/api/coupon/delete/${couponToDelete}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success("Product deleted successfully!");
-      fetchCoupons();
-    } catch (error) {
-      toast.error("Failed to delete product!");
-    }
-    setDeleteDialogOpen(false); // Close dialog after delete
-  };
   return (
-    <Container maxWidth="md" style={{ marginTop: "50px" }}>
-      <Paper elevation={3} style={{ padding: "20px", textAlign: "center" }}>
-        <Typography variant="h4" gutterBottom>
-          Coupon Management
-        </Typography>
-        <Button variant="contained" color="primary" onClick={() => handleOpen()}>
-          Add Coupon
-        </Button>
+    <Container maxWidth="md" sx={{ mt: 4 }}>
+      <Typography variant="h4" align="center" gutterBottom>
+        Coupon Management
+      </Typography>
 
-        <TableContainer component={Paper} style={{ marginTop: "20px" }}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell><b>Code</b></TableCell>
-                <TableCell><b>Discount</b></TableCell>
-                <TableCell><b>Discount Type</b></TableCell>
-                <TableCell><b>Min Purchase</b></TableCell>
-                <TableCell><b>Expires At</b></TableCell>
-                <TableCell><b>Usage</b></TableCell>
-                <TableCell><b>Actions</b></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {coupons.map((coupon) => (
-                <TableRow key={coupon._id}>
-                  <TableCell>{coupon.code}</TableCell>
-                  <TableCell>{coupon.discount}{coupon.discountType === "PERCENTAGE" ? "%" : "₹"}</TableCell>
-                  <TableCell>{coupon.discountType}</TableCell>
-                  <TableCell>₹{coupon.minPurchase}</TableCell>
-                  <TableCell>{new Date(coupon.expiresAt).toLocaleDateString()}</TableCell>
-                  <TableCell>{coupon.usedCount}/{coupon.usageLimit}</TableCell>
-                  <TableCell>
-                    <Button color="primary" onClick={() => handleOpen(coupon)}>Edit</Button>
-                    <Button color="secondary" onClick={() => openDeleteDialog(coupon._id)}>Delete</Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+      {/* Coupon Form */}
+      <Paper sx={{ p: 3, mb: 4 }}>
+        <form onSubmit={handleSubmit}>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField 
+                fullWidth label="Coupon Code" name="code" value={formData.code} 
+                onChange={handleChange} required variant="outlined" 
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Select fullWidth name="couponType" value={formData.couponType} onChange={handleChange}>
+                <MenuItem value="Percentage">Percentage</MenuItem>
+                <MenuItem value="Fixed">Fixed Amount</MenuItem>
+              </Select>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <TextField 
+                fullWidth label="Coupon Value" name="couponValue" type="number" 
+                value={formData.couponValue} onChange={handleChange} required variant="outlined" 
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <TextField fullWidth label="Start Date" name="startsFrom" type="date" value={formData.startsFrom} onChange={handleChange} required InputLabelProps={{ shrink: true }} />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <TextField fullWidth label="End Date" name="endsOn" type="date" value={formData.endsOn} onChange={handleChange} required InputLabelProps={{ shrink: true }} />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Button variant="contained" color="primary" type="submit" fullWidth>
+                Create Coupon
+              </Button>
+            </Grid>
+          </Grid>
+        </form>
       </Paper>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={open} onClose={handleClose}>
-        <DialogTitle>{editingId ? "Edit Coupon" : "Add Coupon"}</DialogTitle>
-        <DialogContent>
-          <TextField name="code" label="Coupon Code" fullWidth margin="dense" value={formData.code} onChange={handleChange} />
-          <TextField name="discount" label="Discount" type="number" fullWidth margin="dense" value={formData.discount} onChange={handleChange} />
-          <TextField name="minPurchase" label="Min Purchase (₹)" type="number" fullWidth margin="dense" value={formData.minPurchase} onChange={handleChange} />
-          <TextField name="expiresAt" label="Expiration Date" type="date" fullWidth margin="dense" value={formData.expiresAt} onChange={handleChange} />
-          <TextField name="usageLimit" label="Usage Limit" type="number" fullWidth margin="dense" value={formData.usageLimit} onChange={handleChange} />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose} color="secondary">Cancel</Button>
-          <Button onClick={handleSubmit} color="primary">{editingId ? "Update" : "Add"}</Button>
-        </DialogActions>
-      </Dialog>
-       <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
-              <DialogTitle>Confirm Deletion</DialogTitle>
-              <DialogContent>
-                <Typography>Are you sure you want to delete this product?</Typography>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={handleCloseDeleteDialog} color="secondary">Cancel</Button>
-                <Button onClick={handleDelete} color="error">Delete</Button>
-              </DialogActions>
-            </Dialog>
+      {/* Coupon List */}
+      <Typography variant="h5" gutterBottom>
+        All Coupons
+      </Typography>
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Code</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell>Value</TableCell>
+              <TableCell>Start Date</TableCell>
+              <TableCell>End Date</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {coupons.length > 0 ? (
+              coupons.map((coupon) => (
+                <TableRow key={coupon.code}>
+                  <TableCell>{coupon.code}</TableCell>
+                  <TableCell>{coupon.couponType}</TableCell>
+                  <TableCell>{coupon.couponType === "Percentage" ? `${coupon.couponValue}%` : `$${coupon.couponValue}`}</TableCell>
+                  <TableCell>{new Date(coupon.startsFrom).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(coupon.endsOn).toLocaleDateString()}</TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  No coupons available
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
     </Container>
   );
 };
 
-export default CouponPage;
+export default CouponComponent;
