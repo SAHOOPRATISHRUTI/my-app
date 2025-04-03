@@ -5,10 +5,11 @@ import "react-toastify/dist/ReactToastify.css";
 import Login from "../components/Login";
 import AdminPage from "../components/AdminPage";
 import UserPage from "../components/UserPage";
-import ProductPage from "../components/ProductPage";
+import SubscriptionMaster from "../components/SubscriptionMaster";
 import CouponPage from "../components/CouponPage";
-import CheckoutPage from "../components/CheckoutPage"
+import ClientRegistration from "../components/ClientRegistration"
 import SubscriptionManagement from "../components/SubscriptionManagement"
+import ClientList from "../components/ClientList"
 const ProtectedRoute = ({ children, role }) => {
   const storedRole = localStorage.getItem("role");
 
@@ -29,6 +30,7 @@ const Mainroute = () => {
       <Router>
         <Routes>
           <Route path="/" element={<Login />} />
+          <Route path="/clientList" element={<ClientList />} />
 
           {/* Admin Routes */}
           <Route
@@ -43,7 +45,7 @@ const Mainroute = () => {
             path="/admin/products"
             element={
               <ProtectedRoute role="admin">
-                <ProductPage />
+                <SubscriptionMaster />
               </ProtectedRoute>
             }
           />
@@ -67,10 +69,10 @@ const Mainroute = () => {
             }
           />
           <Route
-            path="/cart/checkout"
+            path="/client-registration"
             element={
               <ProtectedRoute role="user">
-                <CheckoutPage />
+                <ClientRegistration />
               </ProtectedRoute>
             }
           />

@@ -17,33 +17,95 @@ import {
   DialogActions,
   Typography,
   Box,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  FormHelperText,
 } from "@mui/material";
 
 const SubscriptionManagement = () => {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm();
   const [subscriptions, setSubscriptions] = useState([]);
   const [allSubscriptions, setAllSubscriptions] = useState([]);
+  const [subscriptionNames, setSubscriptionNames] = useState([]);
   const [message, setMessage] = useState("");
   const [filteredSubs, setFilteredSubs] = useState([]);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    fetchSubscriptions();
-  }, []);
-
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptionList = async () => {
     try {
-      const response = await axios.get("http://localhost:8080/api/manageSubscription");
+      const response = await axios.get(
+        "http://192.168.29.156:8080/api/manageSubscription"
+      );
+  
       if (response.data.success && Array.isArray(response.data.data)) {
-        setSubscriptions(processSubscriptions(response.data.data));
-        setAllSubscriptions(response.data.data);
-      } else {
-        console.error("Unexpected data format:", response.data);
+        console.log("Fetched Subscriptions:", response.data.data); // Debugging
+  
+        // ✅ Group subscriptions by name & pick the correct version
+        const groupedSubscriptions = {};
+        response.data.data.forEach((sub) => {
+          const subName = sub.masterSubscription?.name || "N/A";
+          const subWef = new Date(sub.wef); // Convert `wef` to Date object
+  
+          if (
+            !groupedSubscriptions[subName] || 
+            subWef < new Date(groupedSubscriptions[subName].wef) // Pick earliest date
+          ) {
+            groupedSubscriptions[subName] = sub; 
+          }
+        });
+  
+        // ✅ Convert to array for rendering
+        const sortedSubscriptions = Object.values(groupedSubscriptions).sort(
+          (a, b) => new Date(a.wef) - new Date(b.wef) // Sort in ascending order (earliest first)
+        );
+  
+        setSubscriptions(sortedSubscriptions);
+        setAllSubscriptions(response.data.data); // Keep all for details view
       }
     } catch (error) {
       console.error("Error fetching subscriptions:", error);
     }
   };
+  
+  
+  // Fetch subscriptions on component mount
+  useEffect(() => {
+    fetchSubscriptionList();
+  }, []);
+
+  const fetchSubscriptionMaster = async () => {
+    try {
+      const response = await axios.get(
+        "http://localhost:8080/api/subscription/subscriptions"
+      );
+      console.log(response);
+      // Adjust API endpoint
+      if (response.data.success && Array.isArray(response.data.data.data)) {
+        console.log("Fetched Master Subscriptions:", response.data.data.data); // Debugging output
+
+        // Extract subscription names
+        const names = response.data.data.data.map((sub) => ({
+          id: sub._id,
+          name: sub.name,
+        }));
+        setSubscriptionNames(names);
+      }
+    } catch (error) {
+      console.error("Error fetching subscription names:", error);
+    }
+  };
+
+  // Fetch on component mount
+  useEffect(() => {
+    fetchSubscriptionMaster();
+  }, []);
 
   const processSubscriptions = (data) => {
     const today = new Date();
@@ -57,82 +119,118 @@ const SubscriptionManagement = () => {
     });
 
     return Object.keys(groupedSubscriptions).map((name) => {
-      let subs = groupedSubscriptions[name].sort((a, b) => new Date(a.wef) - new Date(b.wef));
-      return subs.find(sub => new Date(sub.wef) <= today) || subs[0];
+      let subs = groupedSubscriptions[name].sort(
+        (a, b) => new Date(a.wef) - new Date(b.wef)
+      );
+      return subs.find((sub) => new Date(sub.wef) <= today) || subs[0];
     });
   };
 
   const onSubmit = async (data) => {
-    const today = new Date();
-    const wefDate = new Date(data.wef);
+    setMessage(""); // Clear previous messages
   
-    // Ensure required fields are present
+    console.log("Form Data Submitted:", data); // Debugging log
+  
+    // ✅ Check if subscription name is selected
+    if (!data.masterSubscriptionId) {
+      setMessage("❌ Subscription name is required.");
+      return;
+    }
+  
+    const subscriptionName = String(data.name).toUpperCase(); // ✅ Ensure it's a string
+  
+    // ✅ Ensure required fields are filled
     if (!data.validityInDays || !data.maxEmployees) {
       setMessage("❌ Validity and Max Employees are required fields.");
       return;
     }
   
-    // Validate Selling Price < Display Price
-    if (parseFloat(data.sellingPrice) >= parseFloat(data.displayPrice)) {
+    // ✅ Convert prices to numbers safely
+    const displayPrice = parseFloat(data.displayPrice);
+    const sellingPrice = parseFloat(data.sellingPrice);
+  
+    console.log("Debug Prices -> Display:", displayPrice, "Selling:", sellingPrice);
+  
+    // ✅ Ensure selling price is less than display price
+    if (isNaN(displayPrice) || isNaN(sellingPrice)) {
+      setMessage("❌ Invalid price values.");
+      return;
+    }
+  
+    if (sellingPrice >= displayPrice) {
       setMessage("❌ Selling price must be less than display price.");
       return;
     }
   
-    // Check if a future WEF already exists
-    const futureSubscription = allSubscriptions.find(sub => 
-      sub.name.toUpperCase() === data.name.toUpperCase() && new Date(sub.wef) > today
-    );
-  
-    if (futureSubscription && wefDate > today) {
-      setMessage("❌ Only one scheduled subscription is allowed in the future.");
-      return;
-    }
-  
-    // Check if a subscription with the same WEF exists
-    const existingSubscription = allSubscriptions.find(sub => 
-      sub.name.toUpperCase() === data.name.toUpperCase() && new Date(sub.wef).toISOString() === wefDate.toISOString()
-    );
-  
-    if (existingSubscription) {
-      setMessage("❌ A subscription with this WEF already exists.");
-      return;
-    }
-  
     try {
+      // ✅ Send valid data to backend
       await axios.post("http://localhost:8080/api/manageSubscription/register", {
         ...data,
-        name: data.name.toUpperCase(), // Convert name to uppercase for consistency
       });
   
       setMessage("✅ Subscription created successfully!");
-      fetchSubscriptions();
-      reset();
+      fetchSubscriptionMaster(); // Refresh subscription list
+  
+      // ✅ Reset form and clear validation errors
+      reset({}, { keepErrors: false, keepDirty: false });
     } catch (error) {
       setMessage(error.response?.data?.message || "Something went wrong!");
     }
   };
   
+
   const handleViewDetails = (subName) => {
-    setFilteredSubs(allSubscriptions.filter(sub => sub.name === subName));
+    const filteredData = allSubscriptions.filter(
+      (sub) => sub.masterSubscription?.name === subName
+    );
+    setFilteredSubs(filteredData);
     setOpen(true);
   };
 
   return (
-    <Box sx={{ maxWidth: "900px", margin: "auto", padding: "20px", border: "1px solid #ddd", borderRadius: "5px" }}>
-      <Typography variant="h4" gutterBottom>Subscription Management</Typography>
+    <Box
+      sx={{
+        maxWidth: "900px",
+        margin: "auto",
+        padding: "20px",
+        border: "1px solid #ddd",
+        borderRadius: "5px",
+      }}
+    >
+      <Typography variant="h4" gutterBottom>
+        Subscription Management
+      </Typography>
 
-      {message && <Typography color={message.includes("✅") ? "green" : "red"}>{message}</Typography>}
+      {message && (
+        <Typography color={message.includes("✅") ? "green" : "red"}>
+          {message}
+        </Typography>
+      )}
 
       {/* Form for Adding Subscription */}
       <form onSubmit={handleSubmit(onSubmit)} style={{ marginBottom: "20px" }}>
-        <TextField
-          label="Subscription Name"
-          fullWidth
-          margin="normal"
-          {...register("name", { required: "Name is required" })}
-          error={!!errors.name}
-          helperText={errors.name?.message}
-        />
+        <FormControl fullWidth margin="normal" error={!!errors.name}>
+          <InputLabel>Subscription Name</InputLabel>
+          <Select
+            {...register("masterSubscriptionId", {
+              required: "Subscription name is required",
+            })}
+            defaultValue="" // Ensure default value matches subscription IDs
+          >
+            {subscriptionNames.length > 0 ? (
+              subscriptionNames.map((sub) => (
+                <MenuItem key={sub.id} value={sub.id}>
+                  {sub.name} ({sub.id}) {/* ✅ Display both Name & ID */}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem disabled>No subscriptions available</MenuItem>
+            )}
+          </Select>
+          {errors.name && (
+            <FormHelperText>{errors.name.message}</FormHelperText>
+          )}
+        </FormControl>
 
         <TextField
           label="WEF (Start Date)"
@@ -150,7 +248,9 @@ const SubscriptionManagement = () => {
           type="number"
           fullWidth
           margin="normal"
-          {...register("displayPrice", { required: "Display price is required" })}
+          {...register("displayPrice", {
+            required: "Display Price is required",
+          })}
           error={!!errors.displayPrice}
           helperText={errors.displayPrice?.message}
         />
@@ -160,7 +260,9 @@ const SubscriptionManagement = () => {
           type="number"
           fullWidth
           margin="normal"
-          {...register("sellingPrice", { required: "Selling price is required" })}
+          {...register("sellingPrice", {
+            required: "Selling Price is required",
+          })}
           error={!!errors.sellingPrice}
           helperText={errors.sellingPrice?.message}
         />
@@ -170,7 +272,9 @@ const SubscriptionManagement = () => {
           type="number"
           fullWidth
           margin="normal"
-          {...register("maxEmployees", { required: "Max employees is required" })}
+          {...register("maxEmployees", {
+            required: "Max Employees is required",
+          })}
           error={!!errors.maxEmployees}
           helperText={errors.maxEmployees?.message}
         />
@@ -185,17 +289,25 @@ const SubscriptionManagement = () => {
           helperText={errors.validityInDays?.message}
         />
 
-        <Button type="submit" variant="contained" color="primary" fullWidth sx={{ marginTop: 2 }}>
+        <Button
+          type="submit"
+          variant="contained"
+          color="primary"
+          fullWidth
+          sx={{ marginTop: 2 }}
+        >
           Create Subscription
         </Button>
       </form>
 
       {/* Subscription Table */}
-      <Typography variant="h5" gutterBottom>Subscription List</Typography>
+      <Typography variant="h5" gutterBottom>
+        Subscription List
+      </Typography>
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
-            <TableRow sx={{ backgroundColor: "#f4f4f4" }}>
+            <TableRow>
               <TableCell>No</TableCell>
               <TableCell>Subscription Name</TableCell>
               <TableCell>Display Price</TableCell>
@@ -207,68 +319,102 @@ const SubscriptionManagement = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {subscriptions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center">No active subscriptions found.</TableCell>
+            {subscriptions.map((sub, index) => (
+              <TableRow key={sub._id}>
+                <TableCell>{index + 1}</TableCell>
+                <TableCell>{sub.masterSubscription?.name || "N/A"}</TableCell>
+                <TableCell>₹{sub.displayPrice}</TableCell>
+                <TableCell>₹{sub.sellingPrice}</TableCell>
+                <TableCell>{new Date(sub.wef).toLocaleDateString("en-GB")}</TableCell>
+                <TableCell>{sub.maxEmployees}</TableCell>
+                <TableCell>{sub.validityInDays} Days</TableCell>
+                <TableCell>
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    size="small"
+                    onClick={() =>
+                      handleViewDetails(sub.masterSubscription?.name)
+                    }
+                  >
+                    View
+                  </Button>
+                </TableCell>
               </TableRow>
-            ) : (
-              subscriptions.map((sub, index) => (
-                <TableRow key={sub._id}>
-                  <TableCell>{index + 1}</TableCell>
-                  <TableCell>{sub.name}</TableCell>
-                  <TableCell>₹{sub.displayPrice}</TableCell>
-                  <TableCell>₹{sub.sellingPrice}</TableCell>
-                  <TableCell>{new Date(sub.wef).toLocaleDateString()}</TableCell>
-                  <TableCell>{sub.maxEmployees}</TableCell>
-                  <TableCell>{sub.validityInDays} Days</TableCell>
-                  <TableCell>
-                    <Button variant="contained" color="secondary" size="small" onClick={() => handleViewDetails(sub.name)}>
-                      View
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            ))}
           </TableBody>
         </Table>
       </TableContainer>
 
-      {/* Dialog for Viewing Details */}
-      <Dialog open={open} onClose={() => setOpen(false)}>
-  <DialogTitle>Subscription Details</DialogTitle>
-  <DialogContent>
-    <Table>
-      <TableHead>
-        <TableRow>
-          <TableCell>#</TableCell>
-          <TableCell>Subscription Name</TableCell>
-          <TableCell>Display Price (₹)</TableCell>
-          <TableCell>Selling Price (₹)</TableCell>
-          <TableCell>Effect From</TableCell>
-          <TableCell>Employee Max</TableCell>
-          <TableCell>Validity (Days)</TableCell>
-        </TableRow>
-      </TableHead>
-      <TableBody>
-        {filteredSubs.map((sub, index) => (
-          <TableRow key={sub._id}>
-            <TableCell>{index + 1}</TableCell>
-            <TableCell>{sub.name}</TableCell>
-            <TableCell>₹{sub.displayPrice}</TableCell>
-            <TableCell>₹{sub.sellingPrice || "N/A"}</TableCell>
-            <TableCell>{new Date(sub.wef).toLocaleDateString()}</TableCell>
-            <TableCell>{sub.maxEmployees}</TableCell>
-            <TableCell>{sub.validityInDays}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  </DialogContent>
-  <DialogActions>
-    <Button onClick={() => setOpen(false)} color="primary">Close</Button>
-  </DialogActions>
-</Dialog>
+      {/* Subscription Details Modal */}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Subscription Details</DialogTitle>
+        <DialogContent>
+          {filteredSubs.length > 0 ? (
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>
+                      <strong>No</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Name</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Display Price</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Selling Price</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Max Employees</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Validity (Days)</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Effect From</strong>
+                    </TableCell>
+                    <TableCell>
+                      <strong>Status</strong>
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredSubs.map((sub, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell>
+                        {sub.masterSubscription?.name || "N/A"}
+                      </TableCell>
+                      <TableCell>₹{sub.displayPrice}</TableCell>
+                      <TableCell>₹{sub.sellingPrice}</TableCell>
+                      <TableCell>{sub.maxEmployees}</TableCell>
+                      <TableCell>{sub.validityInDays} Days</TableCell>
+                      <TableCell>{new Date(sub.wef).toLocaleDateString("en-GB")}</TableCell>
 
+                      <TableCell>{sub.status}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : (
+            <Typography>No details available</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)} color="primary">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
