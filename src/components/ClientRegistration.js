@@ -37,24 +37,27 @@ const ClientRegistration = () => {
     const handleChange = (e) => {
         setClient({ ...client, [e.target.name]: e.target.value });
     };
-
-    // Apply Coupon Discount
     const applyCoupon = () => {
+        if (!client.subscriptionId) {
+            setSnackbar({ open: true, message: "Please select a subscription first!" });
+            return;
+        }
+    
         if (!client.couponCode) {
             setSnackbar({ open: true, message: "Enter a coupon code first!" });
+            return;
+        }
+    
+        const selectedSubscription = subscriptions.find(sub => sub._id === client.subscriptionId);
+        if (!selectedSubscription) {
+            setSnackbar({ open: true, message: "Invalid subscription selected!" });
             return;
         }
     
         const coupon = coupons.find(c => c.code === client.couponCode);
         if (!coupon) {
             setSnackbar({ open: true, message: "Invalid Coupon Code!" });
-            setFinalPrice(null);
-            return;
-        }
-    
-        const selectedSubscription = subscriptions.find(sub => sub._id === client.subscriptionId);
-        if (!selectedSubscription) {
-            setSnackbar({ open: true, message: "Please select a subscription first!" });
+            setFinalPrice(selectedSubscription.sellingPrice); // Reset to original price
             return;
         }
     
@@ -68,15 +71,9 @@ const ClientRegistration = () => {
         const newFinalPrice = Math.max(0, selectedSubscription.sellingPrice - discountAmount);
         setFinalPrice(newFinalPrice);
     
-        let discountValue = coupon.couponType === "Percentage"
-            ? `${coupon.couponValue}% off`
-            : `₹${coupon.couponValue} off`;
-    
-        setSnackbar({ open: true, message: `Coupon Applied: ${discountValue}, Final Price: ₹${newFinalPrice}` });
+        setSnackbar({ open: true, message: `Coupon Applied: ${coupon.couponType === "Percentage" ? coupon.couponValue + "%" : "₹" + coupon.couponValue} off, Final Price: ₹${newFinalPrice}` });
     };
     
-
-    // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!client.name || !client.email || !client.subscriptionId) {
@@ -86,16 +83,18 @@ const ClientRegistration = () => {
     
         try {
             const response = await axios.post("http://localhost:8080/api/client/register", client);
+            
             setSnackbar({ open: true, message: "Client Registered Successfully!" });
     
-            // Set the final price from the response
-            setFinalPrice(response.data.finalPrice || 0);
-            
+            // ✅ Correctly extract `finalPrice` from the API response
+            setFinalPrice(response.data.data.finalPrice || client.finalPrice || 0);
+    
             setClient({ name: "", email: "", subscriptionId: "", couponCode: "" });
         } catch (err) {
             setSnackbar({ open: true, message: err.response?.data?.message || "Registration Failed!" });
         }
     };
+    
     
 
     return (
